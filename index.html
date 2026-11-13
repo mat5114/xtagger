@@ -435,8 +435,9 @@ footer{background:var(--field);color:var(--field-text);padding:64px 0 32px;font-
 .card:hover::before{scale:1 1}
 .card .ico{transition-property:background-color,color,rotate;transition-duration:220ms;transition-timing-function:var(--ease)}
 .card:hover .ico{background:var(--red);color:#fff;rotate:-6deg}
-.rv.wipe{clip-path:polygon(0 0,0 0,0 100%,0 100%);transition-property:opacity,translate,clip-path;transition-duration:700ms,700ms,800ms}
-.rv.wipe.in{clip-path:polygon(0 0,100% 0,100% 100%,0 100%)}
+.rv.wipe{clip-path:inset(0 100% 0 0);transition-property:opacity,translate,clip-path;transition-duration:700ms,700ms,800ms}
+.rv.wipe.in{clip-path:inset(-60px -60px -60px -60px)}
+.rv.na{transition:none !important}
 .st .segbar i{transition-delay:calc(var(--i,0) * 30ms)}
 .scr{color:inherit}
 .scr .g{color:var(--red-bright);opacity:.85}
@@ -1115,7 +1116,7 @@ footer{background:var(--field);color:var(--field-text);padding:64px 0 32px;font-
   var lastPage=null,warp=document.getElementById('warp');
   function route(){
     var id=(location.hash||'#home').slice(1),page=views[id]?id:'home';
-    if(lastPage&&page!==lastPage&&!reduce){lastPage=page;warp.classList.add('on');setTimeout(function(){applyRoute(id,page);setTimeout(function(){warp.classList.remove('on');},260);},300);return;}
+    if(lastPage&&page!==lastPage&&!reduce){lastPage=page;warp.classList.add('on');setTimeout(function(){applyRoute(id,page);if(window.__replay)window.__replay(views[page]);setTimeout(function(){warp.classList.remove('on');},260);},300);return;}
     lastPage=page;applyRoute(id,page);
   }
   function applyRoute(id,page){
@@ -1147,18 +1148,20 @@ footer{background:var(--field);color:var(--field-text);padding:64px 0 32px;font-
   setTimeout(function(){
     var panels=[].slice.call(document.querySelectorAll('.stats-grid .panel'));
     if(reduce||!('IntersectionObserver' in window))return;
-    panels.forEach(function(p){
+    function armPanel(p){if(p.__io)p.__io.disconnect();
       var rows=[].slice.call(p.querySelectorAll('.bar-row'));
       rows.forEach(function(r,ri){var b=r.querySelector('.segbar');b.style.setProperty('--d',(ri*140)+'ms');[].forEach.call(b.children,function(s,i){s.style.setProperty('--i',i);});b.classList.add('na','pre');void b.offsetWidth;b.classList.remove('na');
-        var v=r.querySelector('.v'),m=v.textContent.match(/^(\+?)(\d+)(%?)$/);if(m){v.dataset.pre=m[1];v.dataset.to=m[2];v.dataset.suf=m[3];v.textContent=m[1]+'0'+m[3];}});
-      var io=new IntersectionObserver(function(es){if(!es[0].isIntersecting)return;io.disconnect();
+        var v=r.querySelector('.v');if(!v.dataset.to){var m=v.textContent.match(/^(\+?)(\d+)(%?)$/);if(m){v.dataset.pre=m[1];v.dataset.to=m[2];v.dataset.suf=m[3];}}if(v.dataset.to)v.textContent=v.dataset.pre+'0'+v.dataset.suf;});
+      var io=p.__io=new IntersectionObserver(function(es){if(!es[0].isIntersecting)return;io.disconnect();
         rows.forEach(function(r,ri){var b=r.querySelector('.segbar'),v=r.querySelector('.v'),on=b.querySelectorAll('i.on').length,delay=ri*140,dur=on*70+180;
           b.classList.remove('pre');
           if(!v.dataset.to)return;var to=+v.dataset.to,t0=null;
           setTimeout(function(){function st(t){if(!t0)t0=t;var k=Math.min(1,(t-t0)/dur);v.textContent=v.dataset.pre+Math.round(to*k)+v.dataset.suf;if(k<1)requestAnimationFrame(st);}requestAnimationFrame(st);},delay);
         });},{threshold:.35});
       io.observe(p);
-    });
+    }
+    panels.forEach(armPanel);
+    window.__armReset=function(){panels.forEach(armPanel);};
   },0);
 
   // Wipe reveal for panels and cards
@@ -1352,6 +1355,16 @@ footer{background:var(--field);color:var(--field-text);padding:64px 0 32px;font-
     var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){var el=e.target;var sib=[].slice.call(el.parentNode.children).filter(function(c){return c.classList.contains('rv');});var d=Math.min(sib.indexOf(el),6)*80;el.style.transitionDelay=d+'ms';el.classList.add('in');io.unobserve(el);}});},{rootMargin:'0px 0px -8% 0px'});
     rvs.forEach(function(el){if(!el.classList.contains('in'))io.observe(el);});
   } else rvs.forEach(function(el){el.classList.add('in');});
+  // Replay entrance animations when coming back to a page
+  window.__replay=function(root){
+    if(reduce||!io)return;
+    var els=[].slice.call(root.querySelectorAll('.rv'));
+    els.forEach(function(el){io.unobserve(el);el.classList.add('na');el.classList.remove('in');el.style.transitionDelay='';});
+    void root.offsetWidth;
+    els.forEach(function(el){el.classList.remove('na');});
+    requestAnimationFrame(function(){var vh=innerHeight;els.forEach(function(el,i){var r=el.getBoundingClientRect();if(r.top<vh*0.95&&r.bottom>0){el.style.transitionDelay=Math.min(i,6)*80+'ms';el.classList.add('in');}else io.observe(el);});});
+    if(root.id==='home'){countUp();if(window.__armReset)window.__armReset();}
+  };
 
   // Parallax + progress + nav highlight
   var heroImg=document.getElementById('heroImg'),pars=[].slice.call(document.querySelectorAll('[data-par]')),prog=document.getElementById('progress');
@@ -1368,7 +1381,8 @@ footer{background:var(--field);color:var(--field-text);padding:64px 0 32px;font-
   addEventListener('resize',frame);frame();
 
   // Count-up on hero stats
-  if(!reduce){document.querySelectorAll('[data-count]').forEach(function(el){var to=+el.dataset.count,t0=null;el.textContent='0';function st(t){if(!t0)t0=t;var p=Math.min((t-t0)/1200,1),e=1-Math.pow(1-p,3);el.textContent=Math.round(to*e);if(p<1)requestAnimationFrame(st);}requestAnimationFrame(st);});}
+  function countUp(){if(reduce)return;document.querySelectorAll('[data-count]').forEach(function(el){var to=+el.dataset.count,t0=null;el.textContent='0';function st(t){if(!t0)t0=t;var p=Math.min((t-t0)/1200,1),e=1-Math.pow(1-p,3);el.textContent=Math.round(to*e);if(p<1)requestAnimationFrame(st);}requestAnimationFrame(st);});}
+  countUp();
 
   // Hero: tag targets
   var hero=document.getElementById('top'),score=0,hp=100,sc=document.getElementById('score'),hpv=document.getElementById('hpVal'),hpb=document.getElementById('hpBar');
